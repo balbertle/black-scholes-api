@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Black-Scholes Model Visualizer</title>
+    
+    <!-- React and Babel for JSX -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Plotly.js for charting -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Custom styles for better slider tracks */
+        input[type=range]::-webkit-slider-runnable-track {
+            background: #e5e7eb; /* gray-200 */
+        }
+        input[type=range]::-moz-range-track {
+            background: #e5e7eb;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            background: #3b82f6; /* blue-500 */
+            cursor: pointer;
+            height: 1.25rem;
+            width: 1.25rem;
+            border-radius: 9999px;
+            margin-top: -6px; /* Center thumb on track */
+        }
+        input[type=range]::-moz-range-thumb {
+            background: #3b82f6;
+            cursor: pointer;
+            height: 1.25rem;
+            width: 1.25rem;
+            border-radius: 9999px;
+            border: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        const API_URL = 'http://localhost:8080/api/black-scholes/heatmap';
+
+        // A reusable slider component
+        const ControlSlider = ({ label, value, setValue, min, max, step, unit }) => (
+            <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                    <label className="font-medium text-sm text-gray-600">{label}</label>
+                    <span className="text-sm font-semibold text-blue-600 bg-blue-100 px-2 py-1 rounded-md">
+                        {parseFloat(value).toFixed(2)} {unit}
+                    </span>
+                </div>
+                <input
+                    type="range"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={value}
+                    onChange={(e) => setValue(e.target.value)}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+            </div>
+        );
+        
+        // A reusable dropdown component
+        const ControlSelect = ({ label, value, setValue, options }) => (
+            <div className="space-y-2">
+                 <label className="font-medium text-sm text-gray-600">{label}</label>
+                 <select 
+                    value={value} 
+                    onChange={e => setValue(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                 >
+                    {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                 </select>
+            </div>
+        );
+
+        const App = () => {
+            // --- State for Black-Scholes Parameters ---
+            const [strike, setStrike] = useState('100');
+            const [volatility, setVolatility] = useState('0.20');
+            const [riskFreeRate, setRiskFreeRate] = useState('0.05');
+            
+            // --- State for Heatmap Configuration ---
+            const [dataType, setDataType] = useState('callPrice');
+            const [xAxisVar, setXAxisVar] = useState('spotPrice');
+            const [yAxisVar, setYAxisVar] = useState('timeToMaturity');
+
+            // --- State for UI and Data ---
+            const [heatmapData, setHeatmapData] = useState(null);
+            const [isLoading, setIsLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            // --- Data fetching logic ---
+            const fetchData = useCallback(async () => {
+                setIsLoading(true);
+                setError(null);
+
+                // Define ranges for the axes
+                const ranges = {
+                    spotPrice: { start: 50, end: 150, steps: 50 },
+                    timeToMaturity: { start: 0.01, end: 2.0, steps: 40 }
+                };
+
+                const payload = {
+                    strike: parseFloat(strike),
+                    volatility: parseFloat(volatility),
+                    riskFreeRate: parseFloat(riskFreeRate),
+                    dataType: dataType,
+                    xAxisVariable: xAxisVar,
+                    yAxisVariable: yAxisVar,
+                    xAxisRange: ranges[xAxisVar],
+                    yAxisRange: ranges[yAxisVar]
+                };
+
+                try {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    setHeatmapData(data);
+                } catch (e) {
+                    console.error("Failed to fetch heatmap data:", e);
+                    setError('Failed to connect to the backend. Please ensure the Spring Boot application is running.');
+                } finally {
+                    setIsLoading(false);
+                }
+            }, [strike, volatility, riskFreeRate, dataType, xAxisVar, yAxisVar]);
+
+            // Fetch data on initial load and when parameters change
+            useEffect(() => {
+                fetchData();
+            }, [fetchData]);
+
+            // Render the heatmap when data is available
+            useEffect(() => {
+                if (heatmapData) {
+                    const { data, xLabels, yLabels } = heatmapData;
+                    const plotData = [{
+                        z: data,
+                        x: xLabels,
+                        y: yLabels,
+                        type: 'heatmap',
+                        colorscale: 'Viridis',
+                        reversescale: true,
+                        hovertemplate: 'X: %{x:.2f}<br>Y: %{y:.2f}<br>Value: %{z:.4f}<extra></extra>'
+                    }];
+                    
+                    const layout = {
+                        title: {
+                            text: `${document.querySelector(`option[value="${dataType}"]`).innerText} Heatmap`,
+                            font: { size: 20, color: '#1f2937' }
+                        },
+                        xaxis: { title: xAxisVar},
+                        yaxis: { title: yAxisVar},
+                        autosize: true,
+                        margin: { l: 60, r: 20, b: 60, t: 60, pad: 4 }
+                    };
+
+                    Plotly.newPlot('heatmap-div', plotData, layout, {responsive: true});
+                }
+            }, [heatmapData, dataType, xAxisVar, yAxisVar]);
+            
+            const axisOptions = [
+                { value: 'spotPrice', label: 'Spot Price (S)' },
+                { value: 'timeToMaturity', label: 'Time to Maturity (T)' }
+            ];
+            
+            const dataTypeOptions = [
+                { value: 'callPrice', label: 'Call Price' },
+                { value: 'putPrice', label: 'Put Price' },
+                { value: 'deltaCall', label: 'Delta (Call)' },
+                { value: 'deltaPut', label: 'Delta (Put)' },
+                { value: 'gamma', label: 'Gamma' },
+                { value: 'vega', label: 'Vega' },
+                { value: 'thetaCall', label: 'Theta (Call)' },
+                { value: 'thetaPut', label: 'Theta (Put)' },
+            ];
+
+            return (
+                <div className="min-h-screen flex flex-col lg:flex-row">
+                    {/* --- Controls Panel --- */}
+                    <div className="w-full lg:w-80 xl:w-96 bg-white p-6 shadow-lg lg:h-screen lg:overflow-y-auto shrink-0">
+                        <h1 className="text-2xl font-bold text-gray-800 mb-2">Black-Scholes</h1>
+                        <p className="text-sm text-gray-500 mb-6">Visualizer</p>
+                        
+                        <div className="space-y-6">
+                            <h2 className="text-lg font-semibold border-b pb-2">Heatmap Configuration</h2>
+                            <ControlSelect label="Metric (Z-Axis)" value={dataType} setValue={setDataType} options={dataTypeOptions} />
+
+                            <h2 className="text-lg font-semibold border-b pb-2 pt-4">Model Parameters</h2>
+                            <ControlSlider label="Strike Price (K)" value={strike} setValue={setStrike} min="50" max="150" step="0.1" unit="$" />
+                            <ControlSlider label="Volatility (σ)" value={volatility} setValue={setVolatility} min="0.01" max="1.0" step="0.01" unit="" />
+                            <ControlSlider label="Risk-Free Rate (r)" value={riskFreeRate} setValue={setRiskFreeRate} min="0.00" max="0.2" step="0.005" unit="" />
+                        </div>
+                    </div>
+
+                    {/* --- Main Content: Heatmap --- */}
+                    <main className="flex-1 p-4 sm:p-6 lg:p-8 flex items-center justify-center bg-gray-100">
+                        <div id="heatmap-container" className="w-full h-full bg-white rounded-xl shadow-md p-4 flex items-center justify-center">
+                            {isLoading && (
+                                <div className="text-center">
+                                    <svg className="animate-spin h-8 w-8 text-blue-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <p className="mt-2 text-gray-600">Calculating...</p>
+                                </div>
+                            )}
+                            {error && <div className="text-red-600 font-medium bg-red-100 p-4 rounded-lg">{error}</div>}
+                            <div id="heatmap-div" className="w-full h-full" style={{ display: isLoading || error ? 'none' : 'block' }}></div>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+
+</body>
+</html>
