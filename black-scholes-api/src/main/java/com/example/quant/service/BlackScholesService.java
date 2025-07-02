@@ -14,11 +14,11 @@ public class BlackScholesService {
     // --- Core Black-Scholes Calculations ---
 
     // Cumulative Distribution Function (CDF) for the standard normal distribution
-    // Using the Hart approximation for better performance.
+    // All from Abramowitz and Stegun... I have no idea how this math works as of now
     private double cdf(double x) {
-        double t = 1.0 / (1.0 + 0.2316419 * Math.abs(x));
-        double d = 0.3989423 * Math.exp(-x * x / 2.0);
-        double prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+        double t = 1.0 / (1.0 + 0.2316419 * Math.abs(x)); // Abramowitz and Stegun 
+        double d = 0.3989423 * Math.exp(-x * x / 2.0); // PDF
+        double prob = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); // 5th order polynomial from Abramowitz and Stegun 26.2.17
         return (x > 0) ? 1.0 - prob : prob;
     }
 
@@ -27,12 +27,16 @@ public class BlackScholesService {
         return (1.0 / Math.sqrt(2.0 * Math.PI)) * Math.exp(-0.5 * x * x);
     }
     
+    //d1 and d2 factors for b-s formula
+
     private double[] calculateD1D2(double S, double K, double T, double r, double v) {
         double d1 = (Math.log(S / K) + (r + v * v / 2.0) * T) / (v * Math.sqrt(T));
         double d2 = d1 - v * Math.sqrt(T);
         return new double[]{d1, d2};
     }
 
+
+    // -- Black-Scholes --
     public double calculateCallPrice(double S, double K, double T, double r, double v) {
         if (T <= 0) return Math.max(0, S - K);
         double[] d = calculateD1D2(S, K, T, r, v);
@@ -82,7 +86,7 @@ public class BlackScholesService {
         }
     }
     
-    // --- Heatmap Generation Logic ---
+    // --- Heatmap Generation ---
     
     public HeatmapResponse generateHeatmapData(HeatmapRequest request) {
         int xSteps = request.xAxisRange().steps();
